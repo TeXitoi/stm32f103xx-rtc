@@ -20,24 +20,23 @@ fn main() -> ! {
     let raw_pwr = unsafe { &*hal::stm32f103xx::PWR::ptr() };
     let raw_rtc = unsafe { &*hal::stm32f103xx::RTC::ptr() };
 
+    // Power on
     raw_rcc.apb1enr.modify(|_, w| w.pwren().enabled());
     raw_rcc.apb1enr.modify(|_, w| w.bkpen().enabled());
-
     raw_pwr.cr.modify(|_, w| w.dbp().set_bit());
 
-    raw_rcc.bdcr.modify(|_, w| w.lsebyp().clear_bit());
+    // Selecting Low Speed External clock
     raw_rcc.bdcr.modify(|_, w| w.lseon().set_bit());
-
     while raw_rcc.bdcr.read().lserdy().bit_is_clear() {}
     writeln!(hstdout, "LSE ready").unwrap();
-
-    raw_rcc.bdcr.modify(|_, w| w.rtcen().set_bit());
-
     raw_rcc.bdcr.modify(|_, w| w.rtcsel().lse());
 
+    // enable RTC
+    raw_rcc.bdcr.modify(|_, w| w.rtcen().set_bit());
+
+    // waiting for ready
     while raw_rtc.crl.read().rsf().bit_is_clear() {}
     writeln!(hstdout, "RTC sync").unwrap();
-
     while raw_rtc.crl.read().rtoff().bit_is_clear() {}
     writeln!(hstdout, "RTC done").unwrap();
 
