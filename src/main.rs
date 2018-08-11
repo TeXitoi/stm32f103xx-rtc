@@ -7,42 +7,176 @@ extern crate cortex_m_rt as rt;
 extern crate panic_semihosting;
 extern crate stm32f103xx_hal as hal;
 extern crate cortex_m_semihosting as sh;
+extern crate heapless;
 
 use rt::ExceptionFrame;
 use core::fmt::Write;
+use hal::stm32f103xx;
+use hal::prelude::*;
 
 entry!(main);
 
+pub struct Rtc {
+    rtc: stm32f103xx::RTC
+}
+pub struct RtcCommit<'a>(&'a mut Rtc);
+impl<'a> Drop for RtcCommit<'a> {
+    fn drop(&mut self) { self.0.commit(); }
+}
+impl Rtc {
+    pub fn new(
+        rtc: stm32f103xx::RTC,
+        _apb1: &mut hal::rcc::APB1,
+        pwr: &mut stm32f103xx::PWR,
+    ) -> Rtc {
+        let rcc = unsafe { &*hal::stm32f103xx::RCC::ptr() };
+        let mut rtc = Rtc { rtc };
+        if rcc.apb1enr.read().bkpen().is_disabled() {
+            // Power on
+            rcc.apb1enr.modify(|_, w| w.pwren().enabled());
+            rcc.apb1enr.modify(|_, w| w.bkpen().enabled());
+            pwr.cr.modify(|_, w| w.dbp().set_bit());
+
+            // Selecting Low Speed External clock
+            rcc.bdcr.modify(|_, w| w.lsebyp().clear_bit());
+            rcc.bdcr.modify(|_, w| w.lseon().set_bit());
+            while rcc.bdcr.read().lserdy().bit_is_clear() {}
+            rcc.bdcr.modify(|_, w| w.rtcsel().lse());
+
+            // enable RTC
+            rcc.bdcr.modify(|_, w| w.rtcen().set_bit());
+
+            rtc.sync();
+        }
+        rtc
+    }
+    pub fn sync(&mut self) {
+        while self.rtc.crl.read().rsf().bit_is_clear() {}
+        while self.rtc.crl.read().rtoff().bit_is_clear() {}
+    }
+    pub fn get_cnt(&mut self) -> u32 {
+        self.rtc.cnth.read().bits() << 16 | self.rtc.cntl.read().bits()
+    }
+    pub fn set_cnt(&mut self, cnt: u32) -> RtcCommit {
+        while self.rtc.crl.read().rtoff().bit_is_clear() {}
+        self.rtc.crl.modify(|_, w| w.cnf().set_bit());
+        self.rtc.cntl.write(|w| unsafe { w.cntl().bits(cnt as u16) });
+        self.rtc.cnth.write(|w| unsafe { w.cnth().bits((cnt >> 16) as u16) });
+        RtcCommit(self)
+    }
+    fn commit(&mut self) {
+        self.rtc.crl.modify(|_, w| w.cnf().clear_bit());
+        while self.rtc.crl.read().rtoff().bit_is_clear() {}
+    }
+}
+
+#[derive(Debug)]
+pub enum DayOfWeek {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+impl DayOfWeek {
+    pub fn from_days_since_epoch(days: u32) -> DayOfWeek {
+        use DayOfWeek::*;
+        match days % 7 {
+            4 => Monday,
+            5 => Tuesday,
+            6 => Wednesday,
+            0 => Thursday,
+            1 => Friday,
+            2 => Saturday,
+            3 => Sunday,
+            _ => unreachable!(),
+        }
+    }
+}
+impl core::fmt::Display for DayOfWeek {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        write!(f, "{:?}", self)
+    }
+}
+pub struct DateTime {
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub min: u8,
+    pub sec: u8,
+    pub day_of_week: DayOfWeek,
+}
+impl DateTime {
+    pub fn new(epoch: u32) -> DateTime {
+        let mut days = epoch / 86400;
+        let time = epoch % 86400;
+        let day_of_week = DayOfWeek::from_days_since_epoch(days);
+        let mut year = 1970;
+        let mut leap;
+
+        loop {
+            leap = year % 4 == 0 && year % 400 != 0;
+            if leap && days > 366 {
+                year += 1;
+                days -= 366
+            } else if !leap && days > 365 {
+                year += 1;
+                days -= 365;
+            } else {
+                break;
+            }
+        }
+        let mut days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        if leap { days_in_month[2] = 29; }
+        let mut month = 1;
+        for &nb in days_in_month.iter() {
+            if days < nb { break; }
+            days -= nb;
+            month += 1;
+        }
+        DateTime {
+            year: year,
+            month: month,
+            day: (days + 1) as u8,
+            hour: (time / 60 / 60) as u8,
+            min: (time / 60 % 60) as u8,
+            sec: (time % 60) as u8,
+            day_of_week,
+        }
+    }
+}
+impl core::fmt::Display for DateTime {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        write!(
+            f,
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02} ({})",
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.min,
+            self.sec,
+            self.day_of_week,
+        )
+    }
+}
+
 fn main() -> ! {
     let mut hstdout = sh::hio::hstdout().unwrap();
-
-    let raw_rcc = unsafe { &*hal::stm32f103xx::RCC::ptr() };
-    let raw_pwr = unsafe { &*hal::stm32f103xx::PWR::ptr() };
-    let raw_rtc = unsafe { &*hal::stm32f103xx::RTC::ptr() };
-
-    // Power on
-    raw_rcc.apb1enr.modify(|_, w| w.pwren().enabled());
-    raw_rcc.apb1enr.modify(|_, w| w.bkpen().enabled());
-    raw_pwr.cr.modify(|_, w| w.dbp().set_bit());
-
-    // Selecting Low Speed External clock
-    raw_rcc.bdcr.modify(|_, w| w.lseon().set_bit());
-    while raw_rcc.bdcr.read().lserdy().bit_is_clear() {}
-    writeln!(hstdout, "LSE ready").unwrap();
-    raw_rcc.bdcr.modify(|_, w| w.rtcsel().lse());
-
-    // enable RTC
-    raw_rcc.bdcr.modify(|_, w| w.rtcen().set_bit());
-
-    // waiting for ready
-    while raw_rtc.crl.read().rsf().bit_is_clear() {}
-    writeln!(hstdout, "RTC sync").unwrap();
-    while raw_rtc.crl.read().rtoff().bit_is_clear() {}
-    writeln!(hstdout, "RTC done").unwrap();
+    let mut dp = hal::stm32f103xx::Peripherals::take().unwrap();
+    let mut rcc = dp.RCC.constrain();
+    let mut rtc = Rtc::new(dp.RTC, &mut rcc.apb1, &mut dp.PWR);
+    if rtc.get_cnt() < 100 {
+        rtc.set_cnt(1533939486 + 2 * 60 * 60);
+    }
 
     loop {
-        let clock = raw_rtc.cnth.read().bits() << 16 | raw_rtc.cntl.read().bits();
-        writeln!(hstdout, "rtc = {}", clock).unwrap();
+        let mut s = heapless::String::<heapless::consts::U32>::new();
+        writeln!(s, "{}", DateTime::new(rtc.get_cnt())).unwrap();
+        hstdout.write_str(&s).unwrap();
     }
 }
 
