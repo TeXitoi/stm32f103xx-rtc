@@ -30,7 +30,7 @@ impl Rtc {
         pwr: &mut stm32f103xx::PWR,
     ) -> Rtc {
         let rcc = unsafe { &*hal::stm32f103xx::RCC::ptr() };
-        let mut rtc = Rtc { rtc };
+        let rtc = Rtc { rtc };
         if rcc.apb1enr.read().bkpen().is_disabled() {
             // Power on
             rcc.apb1enr.modify(|_, w| w.pwren().enabled());
@@ -50,15 +50,15 @@ impl Rtc {
         }
         rtc
     }
-    pub fn sync(&mut self) {
+    pub fn sync(&self) {
         while self.rtc.crl.read().rsf().bit_is_clear() {}
         while self.rtc.crl.read().rtoff().bit_is_clear() {}
     }
-    pub fn get_cnt(&mut self) -> u32 {
+    pub fn get_cnt(&self) -> u32 {
         self.rtc.cnth.read().bits() << 16 | self.rtc.cntl.read().bits()
     }
     pub fn set_cnt(&mut self, cnt: u32) -> RtcCommit {
-        while self.rtc.crl.read().rtoff().bit_is_clear() {}
+        self.sync();
         self.rtc.crl.modify(|_, w| w.cnf().set_bit());
         self.rtc.cntl.write(|w| unsafe { w.cntl().bits(cnt as u16) });
         self.rtc.cnth.write(|w| unsafe { w.cnth().bits((cnt >> 16) as u16) });
@@ -66,7 +66,7 @@ impl Rtc {
     }
     fn commit(&mut self) {
         self.rtc.crl.modify(|_, w| w.cnf().clear_bit());
-        while self.rtc.crl.read().rtoff().bit_is_clear() {}
+        self.sync();
     }
 }
 
@@ -110,19 +110,28 @@ pub struct DateTime {
     pub day_of_week: DayOfWeek,
 }
 impl DateTime {
+    fn is_leap(year: u16) -> bool {
+        if year % 4 != 0 {
+            false
+        } else if year % 100 != 0 {
+            true
+        } else {
+            year % 400 == 0
+        }
+    }
     pub fn new(epoch: u32) -> DateTime {
         let mut days = epoch / 86400;
         let time = epoch % 86400;
         let day_of_week = DayOfWeek::from_days_since_epoch(days);
         let mut year = 1970;
-        let mut leap;
+        let mut is_leap;
 
         loop {
-            leap = year % 4 == 0 && year % 400 != 0;
-            if leap && days > 366 {
+            is_leap = Self::is_leap(year);
+            if is_leap && days > 366 {
                 year += 1;
                 days -= 366
-            } else if !leap && days > 365 {
+            } else if !is_leap && days > 365 {
                 year += 1;
                 days -= 365;
             } else {
@@ -130,7 +139,7 @@ impl DateTime {
             }
         }
         let mut days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        if leap { days_in_month[2] = 29; }
+        if is_leap { days_in_month[2] = 29; }
         let mut month = 1;
         for &nb in days_in_month.iter() {
             if days < nb { break; }
@@ -170,7 +179,7 @@ fn main() -> ! {
     let mut rcc = dp.RCC.constrain();
     let mut rtc = Rtc::new(dp.RTC, &mut rcc.apb1, &mut dp.PWR);
     if rtc.get_cnt() < 100 {
-        rtc.set_cnt(1533939486 + 2 * 60 * 60);
+        rtc.set_cnt(1534026785 + 2 * 60 * 60);
     }
 
     loop {
