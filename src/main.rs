@@ -5,19 +5,20 @@ extern crate cortex_m;
 #[macro_use]
 extern crate cortex_m_rt as rt;
 extern crate panic_semihosting;
+#[macro_use]
+extern crate stm32f103xx as device;
 extern crate stm32f103xx_hal as hal;
 extern crate cortex_m_semihosting as sh;
 extern crate heapless;
 
 use rt::ExceptionFrame;
 use core::fmt::Write;
-use hal::stm32f103xx;
 use hal::prelude::*;
 
 entry!(main);
 
 pub struct Rtc {
-    rtc: stm32f103xx::RTC
+    rtc: device::RTC
 }
 pub struct RtcCommit<'a>(&'a mut Rtc);
 impl<'a> Drop for RtcCommit<'a> {
@@ -25,13 +26,13 @@ impl<'a> Drop for RtcCommit<'a> {
 }
 impl Rtc {
     pub fn new(
-        rtc: stm32f103xx::RTC,
+        rtc: device::RTC,
         _apb1: &mut hal::rcc::APB1,
-        pwr: &mut stm32f103xx::PWR,
+        pwr: &mut device::PWR,
     ) -> Rtc {
-        let rcc = unsafe { &*hal::stm32f103xx::RCC::ptr() };
+        let rcc = unsafe { &*device::RCC::ptr() };
         let rtc = Rtc { rtc };
-        if rcc.apb1enr.read().bkpen().is_disabled() {
+        if rcc.bdcr.read().rtcen().is_disabled() {
             // Power on
             rcc.apb1enr.modify(|_, w| w.pwren().enabled());
             rcc.apb1enr.modify(|_, w| w.bkpen().enabled());
@@ -58,10 +59,22 @@ impl Rtc {
         self.rtc.cnth.read().bits() << 16 | self.rtc.cntl.read().bits()
     }
     pub fn set_cnt(&mut self, cnt: u32) -> RtcCommit {
+        self.modify(|s| {
+            s.rtc.cntl.write(|w| unsafe { w.cntl().bits(cnt as u16) });
+            s.rtc.cnth.write(|w| unsafe { w.cnth().bits((cnt >> 16) as u16) });
+        })
+    }
+    pub fn enable_second_interrupt(&mut self, nvic: &mut device::NVIC) {
+        self.rtc.crh.write(|w| w.secie().set_bit());
+        nvic.enable(device::Interrupt::RTC);
+    }
+    pub fn clear_second_interrupt(&mut self) {
+        self.rtc.crl.write(|w| w.secf().clear_bit());
+    }
+    fn modify<F: FnOnce(&mut Self)>(&mut self, f: F) -> RtcCommit {
         self.sync();
         self.rtc.crl.modify(|_, w| w.cnf().set_bit());
-        self.rtc.cntl.write(|w| unsafe { w.cntl().bits(cnt as u16) });
-        self.rtc.cnth.write(|w| unsafe { w.cnth().bits((cnt >> 16) as u16) });
+        f(self);
         RtcCommit(self)
     }
     fn commit(&mut self) {
@@ -173,19 +186,24 @@ impl core::fmt::Display for DateTime {
     }
 }
 
+static mut RTC_DEVICE: Option<Rtc> = None;
+
 fn main() -> ! {
-    let mut hstdout = sh::hio::hstdout().unwrap();
-    let mut dp = hal::stm32f103xx::Peripherals::take().unwrap();
+    let mut dp = device::Peripherals::take().unwrap();
+    let mut cp = device::CorePeripherals::take().unwrap();
     let mut rcc = dp.RCC.constrain();
     let mut rtc = Rtc::new(dp.RTC, &mut rcc.apb1, &mut dp.PWR);
     if rtc.get_cnt() < 100 {
-        rtc.set_cnt(1534026785 + 2 * 60 * 60);
+        rtc.set_cnt(1534199480 + 2 * 60 * 60);
+    }
+
+    unsafe {
+        RTC_DEVICE = Some(rtc);
+        RTC_DEVICE.as_mut().unwrap().enable_second_interrupt(&mut cp.NVIC);
     }
 
     loop {
-        let mut s = heapless::String::<heapless::consts::U32>::new();
-        writeln!(s, "{}", DateTime::new(rtc.get_cnt())).unwrap();
-        hstdout.write_str(&s).unwrap();
+        cortex_m::asm::wfi();
     }
 }
 
@@ -199,4 +217,15 @@ exception!(*, default_handler);
 
 fn default_handler(irqn: i16) {
     panic!("Unhandled exception (IRQn = {})", irqn);
+}
+
+interrupt!(RTC, rtc);
+
+fn rtc() {
+    let mut hstdout = sh::hio::hstdout().unwrap();
+    let rtc = unsafe { RTC_DEVICE.as_mut().unwrap() };
+    let mut s = heapless::String::<heapless::consts::U32>::new();
+    writeln!(s, "{}", DateTime::new(rtc.get_cnt())).unwrap();
+    hstdout.write_str(&s).unwrap();
+    rtc.clear_second_interrupt();
 }
