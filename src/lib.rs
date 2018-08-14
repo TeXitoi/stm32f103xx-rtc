@@ -21,23 +21,22 @@ impl Rtc {
     ) -> Rtc {
         let rcc = unsafe { &*device::RCC::ptr() };
         let rtc = Rtc { rtc };
-        if rcc.bdcr.read().rtcen().is_disabled() {
-            // Power on
-            rcc.apb1enr.modify(|_, w| w.pwren().enabled());
-            rcc.apb1enr.modify(|_, w| w.bkpen().enabled());
-            pwr.cr.modify(|_, w| w.dbp().set_bit());
 
-            // Selecting Low Speed External clock
-            rcc.bdcr.modify(|_, w| w.lsebyp().clear_bit());
-            rcc.bdcr.modify(|_, w| w.lseon().set_bit());
-            while rcc.bdcr.read().lserdy().bit_is_clear() {}
-            rcc.bdcr.modify(|_, w| w.rtcsel().lse());
+        // Power on
+        rcc.apb1enr.modify(|_, w| w.pwren().enabled());
+        rcc.apb1enr.modify(|_, w| w.bkpen().enabled());
+        pwr.cr.modify(|_, w| w.dbp().set_bit());
 
-            // enable RTC
-            rcc.bdcr.modify(|_, w| w.rtcen().set_bit());
+        // Selecting Low Speed External clock
+        rcc.bdcr.modify(|_, w| w.lsebyp().clear_bit());
+        rcc.bdcr.modify(|_, w| w.lseon().set_bit());
+        while rcc.bdcr.read().lserdy().bit_is_clear() {}
+        rcc.bdcr.modify(|_, w| w.rtcsel().lse());
 
-            rtc.sync();
-        }
+        // enable RTC
+        rcc.bdcr.modify(|_, w| w.rtcen().set_bit());
+
+        rtc.sync();
         rtc
     }
     pub fn sync(&self) {

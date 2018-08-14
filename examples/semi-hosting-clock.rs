@@ -27,7 +27,18 @@ fn main() -> ! {
 
     let mut rtc = rtc::Rtc::new(dp.RTC, &mut rcc.apb1, &mut dp.PWR);
     if rtc.get_cnt() < 100 {
-        rtc.set_cnt(1534199480 + 2 * 60 * 60);
+        let today = rtc::datetime::DateTime {
+            year: 2018,
+            month: 8,
+            day: 15,
+            hour: 0,
+            min: 45,
+            sec: 0,
+            day_of_week: rtc::datetime::DayOfWeek::Wednesday,
+        };
+        if let Some(epoch) = today.to_epoch() {
+            rtc.set_cnt(epoch);
+        }
     }
     unsafe {
         RTC_DEVICE = Some(rtc);
