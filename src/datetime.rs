@@ -17,7 +17,7 @@ fn is_leap(year: u16) -> bool {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DayOfWeek {
     Monday,
     Tuesday,
