@@ -17,7 +17,7 @@ fn is_leap(year: u16) -> bool {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DayOfWeek {
     Monday,
     Tuesday,
@@ -47,6 +47,8 @@ impl ::core::fmt::Display for DayOfWeek {
         write!(f, "{:?}", self)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DateTime {
     pub year: u16,
     pub month: u8,
