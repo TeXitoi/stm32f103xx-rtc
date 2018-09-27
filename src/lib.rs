@@ -20,7 +20,7 @@ impl Rtc {
         pwr: &mut device::PWR,
     ) -> Rtc {
         let rcc = unsafe { &*device::RCC::ptr() };
-        let rtc = Rtc { rtc };
+        let mut rtc = Rtc { rtc };
 
         // Power on
         rcc.apb1enr.modify(|_, w| w.pwren().enabled());
@@ -35,6 +35,15 @@ impl Rtc {
 
         // enable RTC
         rcc.bdcr.modify(|_, w| w.rtcen().set_bit());
+
+        // setting freq
+        let freq = 32768;
+        let prl = freq - 1;
+        assert!(prl < 1 << 20);
+        rtc.modify(|s| {
+            s.rtc.prlh.write(|w| unsafe { w.bits(prl >> 16) });
+            s.rtc.prll.write(|w| unsafe { w.bits(prl as u16 as u32) });
+        });
 
         rtc.sync();
         rtc
