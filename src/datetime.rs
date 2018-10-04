@@ -41,6 +41,18 @@ impl DayOfWeek {
             _ => unreachable!(),
         }
     }
+    pub fn next(self) -> Self {
+        use self::DayOfWeek::*;
+        match self {
+            Monday => Tuesday,
+            Tuesday => Wednesday,
+            Wednesday => Thursday,
+            Thursday => Friday,
+            Friday => Saturday,
+            Saturday => Sunday,
+            Sunday => Monday,
+        }
+    }
 }
 impl ::core::fmt::Display for DayOfWeek {
     fn fmt(&self, f: &mut ::core::fmt::Formatter) -> Result<(), ::core::fmt::Error> {
