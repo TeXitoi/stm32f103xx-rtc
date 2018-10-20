@@ -2,8 +2,6 @@
 
 extern crate stm32f103xx_hal as hal;
 
-pub mod datetime;
-
 use hal::stm32f103xx as device;
 
 pub struct Rtc {
