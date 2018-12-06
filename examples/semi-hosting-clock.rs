@@ -10,9 +10,9 @@ extern crate cortex_m_semihosting as sh;
 extern crate heapless;
 
 use core::fmt::Write;
-use hal::prelude::*;
-use rt::entry;
-use hal::device::interrupt;
+use crate::hal::prelude::*;
+use crate::rt::entry;
+use crate::hal::device::interrupt;
 
 static mut RTC_DEVICE: Option<rtc::Rtc> = None;
 

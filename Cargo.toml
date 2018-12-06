@@ -2,6 +2,7 @@
 name = "stm32f103xx-rtc"
 version = "0.1.0"
 authors = ["Guillaume Pinot <texitoi@texitoi.eu>"]
+edition = "2018"
 
 [dependencies]
 stm32f103xx-hal = { git = "https://github.com/burrbull/stm32f103xx-hal", branch = "ed2018" }

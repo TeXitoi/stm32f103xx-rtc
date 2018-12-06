@@ -2,7 +2,7 @@
 
 extern crate stm32f103xx_hal as hal;
 
-use hal::device as device;
+use crate::hal::device as device;
 
 pub struct Rtc {
     rtc: device::RTC
