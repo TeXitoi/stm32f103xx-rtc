@@ -3,42 +3,28 @@
 
 extern crate stm32f103xx_rtc as rtc;
 extern crate cortex_m;
-#[macro_use]
 extern crate cortex_m_rt as rt;
 extern crate panic_semihosting;
-#[macro_use]
-extern crate stm32f103xx as device;
 extern crate stm32f103xx_hal as hal;
 extern crate cortex_m_semihosting as sh;
 extern crate heapless;
 
-use rt::ExceptionFrame;
 use core::fmt::Write;
 use hal::prelude::*;
-
-entry!(main);
+use rt::entry;
+use hal::device::interrupt;
 
 static mut RTC_DEVICE: Option<rtc::Rtc> = None;
 
+#[entry]
 fn main() -> ! {
-    let mut dp = device::Peripherals::take().unwrap();
-    let mut cp = device::CorePeripherals::take().unwrap();
+    let mut dp = hal::device::Peripherals::take().unwrap();
+    let mut cp = hal::device::CorePeripherals::take().unwrap();
     let mut rcc = dp.RCC.constrain();
 
     let mut rtc = rtc::Rtc::new(dp.RTC, &mut rcc.apb1, &mut dp.PWR);
     if rtc.get_cnt() < 100 {
-        let today = rtc::datetime::DateTime {
-            year: 2018,
-            month: 8,
-            day: 15,
-            hour: 0,
-            min: 45,
-            sec: 0,
-            day_of_week: rtc::datetime::DayOfWeek::Wednesday,
-        };
-        if let Some(epoch) = today.to_epoch() {
-            rtc.set_cnt(epoch);
-        }
+        rtc.set_cnt(4242);
     }
     unsafe {
         RTC_DEVICE = Some(rtc);
@@ -50,25 +36,12 @@ fn main() -> ! {
     }
 }
 
-exception!(HardFault, hard_fault);
-
-fn hard_fault(ef: &ExceptionFrame) -> ! {
-    panic!("{:#?}", ef);
-}
-
-exception!(*, default_handler);
-
-fn default_handler(irqn: i16) {
-    panic!("Unhandled exception (IRQn = {})", irqn);
-}
-
-interrupt!(RTC, rtc);
-
-fn rtc() {
+#[interrupt]
+fn RTC() {
     let mut hstdout = sh::hio::hstdout().unwrap();
     let rtc = unsafe { RTC_DEVICE.as_mut().unwrap() };
     let mut s = heapless::String::<heapless::consts::U32>::new();
-    writeln!(s, "{}", rtc::datetime::DateTime::new(rtc.get_cnt())).unwrap();
+    writeln!(s, "{}", rtc.get_cnt()).unwrap();
     hstdout.write_str(&s).unwrap();
     rtc.clear_second_interrupt();
 }
