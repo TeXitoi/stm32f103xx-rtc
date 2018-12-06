@@ -26,11 +26,11 @@ fn main() -> ! {
     if rtc.get_cnt() < 100 {
         rtc.set_cnt(4242);
     }
-    unsafe {
-        RTC_DEVICE = Some(rtc);
-        RTC_DEVICE.as_mut().unwrap().enable_second_interrupt(&mut cp.NVIC);
-    }
+    rtc.listen_second_interrupt();
 
+    unsafe { RTC_DEVICE = Some(rtc); }
+
+    cp.NVIC.enable(hal::device::Interrupt::RTC);
     loop {
         cortex_m::asm::wfi();
     }

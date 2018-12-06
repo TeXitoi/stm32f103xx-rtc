@@ -59,9 +59,8 @@ impl Rtc {
             s.rtc.cnth.write(|w| unsafe { w.cnth().bits((cnt >> 16) as u16) });
         })
     }
-    pub fn enable_second_interrupt(&mut self, nvic: &mut device::NVIC) {
+    pub fn listen_second_interrupt(&mut self) {
         self.rtc.crh.write(|w| w.secie().set_bit());
-        nvic.enable(device::Interrupt::RTC);
     }
     pub fn clear_second_interrupt(&mut self) {
         self.rtc.crl.write(|w| w.secf().clear_bit());
