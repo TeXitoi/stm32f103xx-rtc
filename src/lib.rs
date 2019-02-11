@@ -1,8 +1,8 @@
 #![no_std]
 
-extern crate stm32f103xx_hal as hal;
+extern crate stm32f1xx_hal as hal;
 
-use crate::hal::device as device;
+use crate::hal::stm32 as device;
 
 pub struct Rtc {
     rtc: device::RTC
